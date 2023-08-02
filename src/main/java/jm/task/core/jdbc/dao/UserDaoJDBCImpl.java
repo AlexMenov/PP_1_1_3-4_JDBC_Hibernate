@@ -30,7 +30,7 @@ public class UserDaoJDBCImpl implements UserDao {
             VALUES (?, ?, ?);
             """;
     private static final String sqlClearUsers = """
-            TRUNCATE TABLE users;
+            TRUNCATE users;
             """;
     private static final String sqlRemoveUserById = """
             DELETE FROM users
@@ -43,66 +43,76 @@ public class UserDaoJDBCImpl implements UserDao {
     public UserDaoJDBCImpl() {
 
     }
-
     public void createUsersTable() {
-        executeWithStatementBatch(sqlCreateTable);
-    }
-
-    public void dropUsersTable() {
-        executeWithStatementBatch(sqlDropTable);
-    }
-
-    public void saveUser(String name, String lastName, byte age) {
-        executeWithPreparedStatement(sqlSaveUser, name, lastName, age);
-        System.out.printf("User с именем – %s добавлен в базу данных%n", name);
-    }
-
-    public void removeUserById(long id) {
-        executeWithPreparedStatement(sqlRemoveUserById, id);
-    }
-
-    public List<User> getAllUsers() {
-        return executeWithPreparedStatement(sqlGetAllUsers, null);
-    }
-
-    public void cleanUsersTable() {
-        executeWithStatementBatch(sqlClearUsers);
-    }
-
-    private List<User> executeWithPreparedStatement(String sql, Object... otherElements) {
-        try (Connection conn = Util.getConnection();
-             PreparedStatement preparedStatement = conn.prepareStatement(sql)) {
-            preparedStatement.execute(sqlUseUsers);
-            if (otherElements != null) {
-                for (int i = 1; i <= otherElements.length; i++) {
-                    preparedStatement.setObject(i, otherElements[i - 1]);
-                }
-                preparedStatement.execute();
-            } else {
-                List<User> users = new ArrayList<>();
-                try (ResultSet result = preparedStatement.executeQuery()) {
-                    while (result.next()) {
-                        User user = new User(
-                                result.getString("name"),
-                                result.getString("last_name"),
-                                result.getByte("age")
-                        );
-                        user.setId(result.getLong("id"));
-                        users.add(user);
-                    }
-                    return users;
-                }
-            }
-            return null;
+        try (Connection conn = Util.open(); Statement statement = conn.createStatement()) {
+            statement.addBatch(sqlCreateDatabase);
+            statement.addBatch(sqlUseUsers);
+            statement.addBatch(sqlCreateTable);
+            statement.executeBatch();
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private void executeWithStatementBatch(String sql) {
-        try (Connection conn = Util.getConnection(); Statement statement = conn.createStatement()) {
+    public void dropUsersTable() {
+        try (Connection conn = Util.open(); Statement statement = conn.createStatement()) {
             statement.addBatch(sqlUseUsers);
-            statement.addBatch(sql);
+            statement.addBatch(sqlDropTable);
+            statement.executeBatch();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void saveUser(String name, String lastName, byte age) {
+        try (Connection conn = Util.open()) {
+            PreparedStatement preparedStatement = conn.prepareStatement(sqlSaveUser);
+            preparedStatement.setString(1, name);
+            preparedStatement.setString(2, lastName);
+            preparedStatement.setInt(3, age);
+            preparedStatement.execute(sqlUseUsers);
+            preparedStatement.execute();
+            System.out.printf("User с именем – %s добавлен в базу данных%n", name);
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void removeUserById(long id) {
+        try (Connection conn = Util.open()) {
+            PreparedStatement preparedStatement = conn.prepareStatement(sqlRemoveUserById);
+            preparedStatement.setInt(1, (int) id);
+            preparedStatement.execute(sqlUseUsers);
+            preparedStatement.execute();
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public List<User> getAllUsers() {
+        List<User> users = new ArrayList<>();
+        try (Connection conn = Util.open(); Statement statement = conn.createStatement()) {
+            statement.execute(sqlUseUsers);
+            ResultSet result = statement.executeQuery(sqlGetAllUsers);
+            while (result.next()) {
+                User user = new User(
+                        result.getString("name"),
+                        result.getString("last_name"),
+                        result.getByte("age")
+                );
+                user.setId(result.getLong("id"));
+                users.add(user);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException(e);
+        }
+        return users;
+    }
+
+    public void cleanUsersTable() {
+        try (Connection conn = Util.open(); Statement statement = conn.createStatement()) {
+            statement.addBatch(sqlUseUsers);
+            statement.addBatch(sqlClearUsers);
             statement.executeBatch();
         } catch (SQLException e) {
             throw new RuntimeException(e);
